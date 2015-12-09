@@ -5,6 +5,7 @@ import sqlite3
 import binascii
 import itertools
 import logging
+import requests
 from base64 import b64encode
 
 log = logging.getLogger('gglsbl3')
@@ -146,11 +147,22 @@ class SqliteStorage(StorageBase):
             VALUES (?, ?, ?, ?)'
         params = [hash_prefix[k] for k in
                         ('value', 'chunk_number', 'list_name', 'chunk_type')]
+        self.session = requests.Session()
+        self.session.headers.update({os.environ['AUTH_TOKEN_NAME']: os.environ['AUTH_TOKEN']})
+        self.session.headers.update({"content-type": "application/json; charset=utf-8"})
         try:
             self.dbc.execute(q, params)
+            r = self.session.post(os.environ['API_CALL_PUT'] + hash_prefix['value'].decode('ascii'))
+            r.raise_for_status()
         except sqlite3.IntegrityError as e:
             log.warning("Trying to insert existing hash prefix: '%s' (%s)", hash_prefix, e)
-
+        except requests.exceptions.RequestException as e:
+            if r:
+                log.error('Trying to insert existing hash prefix: {0} Response code: {1}\nHeaders: {2}'
+                              '\nResponse body: {3}\nException: {4}'
+                              ''.format(hash_prefix, r, r.headers, r.text, e))
+            else:
+                log.error(repr(e))
 
     def store_full_hashes(self, hash_prefix, hashes):
         "Store hashes found for the given hash prefix"
