@@ -154,7 +154,7 @@ class SqliteStorage(StorageBase):
 
         try:
             self.dbc.execute(q, params)
-            r = session.put(os.environ['RESTAPI_TARGET'] + str(encode(hash_prefix['value'], "hex")))
+            r = session.put(os.environ['RESTAPI_TARGET'] + str(encode(hash_prefix['value'], "hex")).replace('b\'','').replace('\'',''))
             r.raise_for_status()
         except sqlite3.IntegrityError as e:
             log.warning("Trying to insert existing hash prefix: '%s' (%s)", hash_prefix, e)
