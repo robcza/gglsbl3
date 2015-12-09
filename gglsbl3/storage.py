@@ -152,7 +152,7 @@ class SqliteStorage(StorageBase):
         self.session.headers.update({"content-type": "application/json; charset=utf-8"})
         try:
             self.dbc.execute(q, params)
-            r = self.session.post(os.environ['API_CALL_PUT'] + hash_prefix['value'].decode('ascii'))
+            r = self.session.put(os.environ['RESTAPI_TARGET'] + hash_prefix['value'].decode('ascii'))
             r.raise_for_status()
         except sqlite3.IntegrityError as e:
             log.warning("Trying to insert existing hash prefix: '%s' (%s)", hash_prefix, e)
