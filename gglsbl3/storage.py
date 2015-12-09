@@ -6,6 +6,7 @@ import binascii
 import itertools
 import logging
 import requests
+from codecs import encode
 from base64 import b64encode
 
 log = logging.getLogger('gglsbl3')
@@ -125,6 +126,9 @@ class SqliteStorage(StorageBase):
         "Store chunk in the database"
         log.log(TRACE, 'Storing %s chunk #%s for list name %s' % (chunk.chunk_type, chunk.chunk_number, chunk.list_name))
         self.insert_chunk(chunk)
+        session = requests.Session()
+        session.headers.update({os.environ['AUTH_TOKEN_NAME']: os.environ['AUTH_TOKEN']})
+        session.headers.update({"content-type": "application/json; charset=utf-8"})
         for hash_value in chunk.hashes:
             hash_prefix = {
                 'list_name': chunk.list_name,
@@ -132,7 +136,7 @@ class SqliteStorage(StorageBase):
                 'chunk_type': chunk.chunk_type,
                 'value': sqlite3.Binary(hash_value),
             }
-            self.insert_hash_prefix(hash_prefix)
+            self.insert_hash_prefix(hash_prefix, session)
         self.db.commit()
 
     def insert_chunk(self, chunk):
@@ -141,18 +145,16 @@ class SqliteStorage(StorageBase):
             VALUES (?, ?, ?)'
         self.dbc.execute(q, [chunk.chunk_number, chunk.list_name, chunk.chunk_type])
 
-    def insert_hash_prefix(self, hash_prefix):
+    def insert_hash_prefix(self, hash_prefix, session):
         "Insert individual hash prefix to the database"
         q = 'INSERT INTO hash_prefix (value, chunk_number, list_name, chunk_type) \
             VALUES (?, ?, ?, ?)'
         params = [hash_prefix[k] for k in
                         ('value', 'chunk_number', 'list_name', 'chunk_type')]
-        self.session = requests.Session()
-        self.session.headers.update({os.environ['AUTH_TOKEN_NAME']: os.environ['AUTH_TOKEN']})
-        self.session.headers.update({"content-type": "application/json; charset=utf-8"})
+
         try:
             self.dbc.execute(q, params)
-            r = self.session.put(os.environ['RESTAPI_TARGET'] + hash_prefix['value'].decode('ascii'))
+            r = session.put(os.environ['RESTAPI_TARGET'] + str(encode(hash_prefix['value'], "hex")))
             r.raise_for_status()
         except sqlite3.IntegrityError as e:
             log.warning("Trying to insert existing hash prefix: '%s' (%s)", hash_prefix, e)
