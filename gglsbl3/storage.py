@@ -72,6 +72,13 @@ class SqliteStorage(StorageBase):
         log.info('Opening SQLite DB %s' % db_path)
         self.db = sqlite3.connect(db_path, check_same_thread=False)
         self.dbc = self.db.cursor()
+        if all(item in os.environ for item in ['RESTAPI_TARGET', 'AUTH_TOKEN_NAME', 'AUTH_TOKEN']):
+            self.api_target = os.environ['RESTAPI_TARGET']
+            log.info('Target for API calls is: %s' % str(self.api_target))
+            self.auth_header = {os.environ['AUTH_TOKEN_NAME']: os.environ['AUTH_TOKEN']}
+        else:
+            self.api_target = self.auth_header = None
+            log.info('No RESTAPI_TARGET/AUTH_TOKEN/AUTH_TOKEN_NAME set in ENV')
         if do_init_db:
             log.info('SQLite DB does not exist, initializing')
             self.init_db()
@@ -126,9 +133,11 @@ class SqliteStorage(StorageBase):
         "Store chunk in the database"
         log.log(TRACE, 'Storing %s chunk #%s for list name %s' % (chunk.chunk_type, chunk.chunk_number, chunk.list_name))
         self.insert_chunk(chunk)
-        session = requests.Session()
-        session.headers.update({os.environ['AUTH_TOKEN_NAME']: os.environ['AUTH_TOKEN']})
-        session.headers.update({"content-type": "application/json; charset=utf-8"})
+        session = None
+        if self.api_target:
+            session = requests.Session()
+            session.headers.update(self.auth_header)
+            session.headers.update({"content-type": "application/json; charset=utf-8"})
         for hash_value in chunk.hashes:
             hash_prefix = {
                 'list_name': chunk.list_name,
@@ -154,8 +163,10 @@ class SqliteStorage(StorageBase):
 
         try:
             self.dbc.execute(q, params)
-            r = session.put(os.environ['RESTAPI_TARGET'] + str(encode(hash_prefix['value'], "hex")).replace('b\'','').replace('\'',''))
-            r.raise_for_status()
+            if(session):
+                r = session.put(self.api_target +
+                                str(encode(hash_prefix['value'], "hex")).replace('b\'','').replace('\'',''))
+                r.raise_for_status()
         except sqlite3.IntegrityError as e:
             log.warning("Trying to insert existing hash prefix: '%s' (%s)", hash_prefix, e)
         except requests.exceptions.RequestException as e:
@@ -250,7 +261,30 @@ class SqliteStorage(StorageBase):
         if not chunk_numbers:
             return
         log.info('Deleting "sub" chunks %s' % repr(chunk_numbers))
+
+        if self.api_target:
+            session = requests.Session()
+            session.headers.update(self.auth_header)
+            session.headers.update({"content-type": "application/json; charset=utf-8"})
+
         for cn in self.expand_ranges(chunk_numbers):
+            if self.api_target:
+                query = 'SELECT value FROM hash_prefix WHERE chunk_number=?'
+                self.dbc.execute(query, [cn])
+                rows = self.dbc.fetchall()
+                for row in rows:
+                    try:
+                        r = session.put(self.api_target +
+                                        str(encode(row[0], "hex")).replace('b\'','').replace('\'',''))
+                        r.raise_for_status()
+                    except requests.exceptions.RequestException as e:
+                        if r:
+                            log.error('Trying to delete hash prefixes for sub chunk: {0} Response code: {1}\nHeaders: {2}'
+                                      '\nResponse body: {3}\nException: {4}'
+                                      ''.format(hash_prefix, r, r.headers, r.text, e))
+                    else:
+                        log.error(repr(e))
+
             q = 'DELETE FROM chunk WHERE chunk_type=? AND chunk_number=?'
             self.dbc.execute(q, ['sub', cn])
         self.db.commit()
