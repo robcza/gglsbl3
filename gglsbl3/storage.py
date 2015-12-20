@@ -274,7 +274,7 @@ class SqliteStorage(StorageBase):
                 rows = self.dbc.fetchall()
                 for row in rows:
                     try:
-                        r = session.put(self.api_target +
+                        r = session.delete(self.api_target +
                                         str(encode(row[0], "hex")).replace('b\'','').replace('\'',''))
                         r.raise_for_status()
                     except requests.exceptions.RequestException as e:
