@@ -322,6 +322,11 @@ class SqliteStorage(StorageBase):
         self.dbc.execute(q)
         self.db.commit()
         self.init_db()
+        if self.api_target:
+            session = requests.Session()
+            session.headers.update(self.auth_header)
+            session.headers.update({"content-type": "application/json; charset=utf-8"})
+            session.delete(self.api_target)
 
     def close(self):
         self.db.close()
