@@ -281,8 +281,8 @@ class SqliteStorage(StorageBase):
                         if r:
                             log.error('Trying to delete hash prefixes for sub chunk: {0} Response code: {1}\nHeaders: {2}'
                                       '\nResponse body: {3}\nException: {4}'
-                                      ''.format(hash_prefix, r, r.headers, r.text, e))
-                    else:
+                                      ''.format(hash_prefix, r, r.headers, r.text, repr(e)))
+                    except Exception as e:
                         log.error(repr(e))
 
             q = 'DELETE FROM chunk WHERE chunk_type=? AND chunk_number=?'
