@@ -163,19 +163,22 @@ class SqliteStorage(StorageBase):
 
         try:
             self.dbc.execute(q, params)
+        except sqlite3.IntegrityError as e:
+            log.warning("Trying to insert existing hash prefix: '%s' (%s)", hash_prefix, e)
+        try:
             if(session):
                 r = session.put(self.api_target +
                                 str(encode(hash_prefix['value'], "hex")).replace('b\'','').replace('\'',''))
                 r.raise_for_status()
-        except sqlite3.IntegrityError as e:
-            log.warning("Trying to insert existing hash prefix: '%s' (%s)", hash_prefix, e)
         except requests.exceptions.RequestException as e:
-            if r:
+            try:
+                r
+            except:
+                log.error(repr(e))
+            else:
                 log.error('Trying to insert existing hash prefix: {0} Response code: {1}\nHeaders: {2}'
                               '\nResponse body: {3}\nException: {4}'
                               ''.format(hash_prefix, r, r.headers, r.text, e))
-            else:
-                log.error(repr(e))
 
     def store_full_hashes(self, hash_prefix, hashes):
         "Store hashes found for the given hash prefix"
